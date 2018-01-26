@@ -101,7 +101,6 @@ Before calling strcpy, the stack will contain:
 |buf_ptr|
 |buf|
 |main_ebp|
---------------------
 
 As seen before, I've explained what happens when in the stack when executing from the very early until strcpy(). strcpy() will put all the data of buf in tmp, as a consequence if you write more data (bytes) than tmp can't handle an overflow will happen. Here comes the funny part, the last stack view tell us that tmp is above printme_ebp and return_address. These two take 4 bytes each so you only need to overwrite 8 bytes after you fill up tmp with whatever you want.
 
@@ -147,7 +146,51 @@ Before printme() returns the stack will look like:
 |buf_ptr|
 |buf|
 |main_ebp|
---------------------
 
-As seen before 18 bytes are needed to overflow tmp and overwrite return_address. 0x58 is 'X' in hex and equals to 1 byte, each address contains 4 bytes.
+As seen before 20 bytes are needed to overflow tmp and overwrite return_address. 0x58 is 'X' in hex and equals to 1 byte, each address contains 4 bytes.
 
+How do I trigger DEP to block the execution of code?
+
+Summarizing, the vulnerability has been spotted and explained, when printme() returns it will jump to the return_address filled of 0x58585858. It's an invalid address so it will trigger and ACCESS_VIOLATION. Remember that since the stack is non-executable DEP would block our attempt in the case of placing a valid pointer to our shellcode.
+
+How do I execute code if DEP is enabled and blocking my own code (shellcode)?
+
+Now you should be struggling with the fact that DEP is blocking any execution attempt if the return address jumps to the shellcode. The trick is making the stack executable to execute shellcode instructions like a normal explotation scenario. For this to work DEP must be bypassed, well the Windows API provides means to change the permissions of a page. VirtualProtect is one function that does this nicely. But you should be asking, how can I can setup VirtualProtect parameters and call it? With a technique called ROP.
+
+What is a ROP chain?
+
+ROP (Return Oriented Programming) is a technique used for chaining multiple functions (gadgets) from any module of the program to accomplish shellcode execution. It works because the gadgets are located inside any .DLL/module loaded in the Virtual Space Address of the program. These gadgets are marked as executable, so it's perfect to use them to chain multiple instructions to setup registers and finally call VirtualProtect.
+
+```c
+BOOL WINAPI VirtualProtect(
+  _In_  LPVOID lpAddress,
+  _In_  SIZE_T dwSize,
+  _In_  DWORD  flNewProtect,
+  _Out_ PDWORD lpflOldProtect
+);
+```
+
+Yeah seems cool but... how can I chain these gadgets and trigger the execution of the ROP chain? Remember the previous stack view? Well the return address should be overwritten with the address of the first gadget. Then the first gadget will perform and return into the second gadget and so on. Until calling VirtualProtect.
+
+|Stack              |
+|-------------------|
+|58585858 (tmp)|
+|58585858|
+|58585858|
+|58585858| (printme_ebp)
+|gadget_1 (return_address)|
+|gadget_2|
+|gadget_n|
+|shellcode|
+
+How do other protections affect DEP impact on security?
+
+There exist more protections that work nicely in combination with DEP. The best is ASLR. ASLR randomizes the base address of each module every time the system reboots. Why is ASLR so important? Well these ROP gadgets are addresses that need be spotted and added to tmp in proper order to overwrite return_address. If ASLR changes the base address of the module where gadgets reside, then these gadgets are rebased and printme() will fail since returns to the first gadget and the address is invalid.
+
+This can be seen as:
+
+gadget_address = module_base_address + static_offset + ASLR_offset 
+
+If ASLR is disabled then ASLR_offset=0 so the gadget_address will be always constant. Without ASLR, DEP is weak because our gadgets will work every time, their address will never change and we will be able to bypass it without struggling with ASLR rebasing.
+
+If ASLR is enabled then ASLR_offset=rand and the gaget_address will change on every reboot. This makes our exploit unreliable at the very first time. There are other means to thwart ASLR but that's for a further article of this series.
