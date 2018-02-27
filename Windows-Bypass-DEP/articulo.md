@@ -676,12 +676,21 @@ Use OllyDbg step-by-step and see how the ROP Chain is executed gadget by gadget.
 ## Useful Links
 
 https://defuse.ca/online-x86-assembler.html
+
 https://en.wikibooks.org/wiki/X86_Disassembly/Calling_Conventions
+
 https://technet.microsoft.com/en-us/library/cc728455(v=ws.10).aspx
+
 https://msdn.microsoft.com/en-us/library/windows/desktop/aa366553(v=vs.85).aspx
+
 https://en.wikipedia.org/wiki/Stack_buffer_overflow
+
 https://en.wikipedia.org/wiki/Executable_space_protection#Windows
+
 https://en.wikipedia.org/wiki/Return-oriented_programming
+
 https://en.wikipedia.org/wiki/Return-to-libc_attack
+
 https://en.wikipedia.org/wiki/Address_space_layout_randomization
+
 https://www.corelan.be/index.php/2010/06/16/exploit-writing-tutorial-part-10-chaining-dep-with-rop-the-rubikstm-cube/
