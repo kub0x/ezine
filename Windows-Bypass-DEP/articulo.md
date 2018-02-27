@@ -22,24 +22,9 @@ In addition PAE will introduce DEP as a built-in feature. That's why so importan
 
 So far so good, the following questions will be targeted on these article:
 
--------------------------------------------------------------------------------------
-##### What vulnerability do I use to exploit and run code?
+[TOC]
 
-##### How do I trigger DEP to block the execution of code?
-
-##### How do I execute code if DEP is enabled and blocking my own code (shellcode)?
-
-##### What is a ROP Chain?
-
-##### How do other protections affect DEP impact on security?
-
-##### Do I need to disable other protection(s) for this test?
-
-##### How do I use a Debugger to create a reliable exploit and spawn my shellcode?
-
-------------------------------------------------
-
-#### What vulnerability do I use to exploit and run code?
+## What vulnerability do I use to exploit and run code?
 
 In this article I'm using a Buffer Overflow to smash the stack in order to overwrite the return address. When the program returns from a function it will jump to the caller function (the previous one), but if the return addres is overwritten, it will return to what it's there, in exploiting means, this is a pointer to our shellcode. DEP will prevent code to be executed on the stack, then thwarting DEP is essencial to execute our shellcode.
 
