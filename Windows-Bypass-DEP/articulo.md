@@ -519,7 +519,7 @@ Junks are used for the POP REG instructions, so the following gadgets are not po
 
 ## The Exploit and the ROP chain together:
 
-At this point you are familiarized with ROP chaining concept, besides you can locate useful gadgets inside loaded modules (DLLs). In addition you know the register's order to perform the VirtualProtect call (it is on the stackview above). It's your work now to complete the rest of the exploit, it is easy but challenging if it's your first time, I've only gave one gadget explanation, but I'm giving the whole ROP chain and C source, so you can understand and debug it step by step. You will notice how the chain is followed until PUSHAD.
+At this point you are familiarized with ROP chaining concept, besides you can locate useful gadgets inside loaded modules (DLLs). In addition you know the register's order to perform the VirtualProtect call. It's your work now to complete the rest of the exploit, it is easy but challenging if it's your first time. I'm giving the whole ROP chain and C source, so you can understand and debug it step by step. You will notice how the chain is followed until PUSHAD.
 
 ```c
 #include <windows.h>
@@ -670,3 +670,18 @@ int main(int argc, char** argv) {
 	return 0;
 }
 ```
+
+Use OllyDbg step-by-step and see how the ROP Chain is executed gadget by gadget. Of course you need the same OS I used and ASLR disabled. You can always search for the gadgets I gave above in the executable with OllyDbg, once you find the new addresses substitute on the source code and the exploit should work.
+
+## Useful Links
+
+https://defuse.ca/online-x86-assembler.html
+https://en.wikibooks.org/wiki/X86_Disassembly/Calling_Conventions
+https://technet.microsoft.com/en-us/library/cc728455(v=ws.10).aspx
+https://msdn.microsoft.com/en-us/library/windows/desktop/aa366553(v=vs.85).aspx
+https://en.wikipedia.org/wiki/Stack_buffer_overflow
+https://en.wikipedia.org/wiki/Executable_space_protection#Windows
+https://en.wikipedia.org/wiki/Return-oriented_programming
+https://en.wikipedia.org/wiki/Return-to-libc_attack
+https://en.wikipedia.org/wiki/Address_space_layout_randomization
+https://www.corelan.be/index.php/2010/06/16/exploit-writing-tutorial-part-10-chaining-dep-with-rop-the-rubikstm-cube/
