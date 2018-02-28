@@ -22,7 +22,21 @@ In addition PAE will introduce DEP as a built-in feature. That's why so importan
 
 So far so good, the following questions will be targeted on these article:
 
-[TOC]
+Table of Contents
+=================
+
+   * [Bypassing Data Execution Prevention on Windows NT](#bypassing-data-execution-prevention-on-windows-nt)
+      * [What vulnerability do I use to exploit and run code?](#what-vulnerability-do-i-use-to-exploit-and-run-code)
+      * [How do I trigger DEP to block the execution of code?](#how-do-i-trigger-dep-to-block-the-execution-of-code)
+      * [How do I execute code if DEP is enabled and blocking my own code (shellcode)?](#how-do-i-execute-code-if-dep-is-enabled-and-blocking-my-own-code-shellcode)
+      * [What is a ROP chain?](#what-is-a-rop-chain)
+      * [How do other protections affect DEP impact on security?](#how-do-other-protections-affect-dep-impact-on-security)
+      * [Do I need to disable other protection(s) for this test?](#do-i-need-to-disable-other-protections-for-this-test)
+      * [Common mistakes made when building ROP chains](#common-mistakes-made-when-building-rop-chains)
+      * [Using the Debugger to build a ROP Chain](#using-the-debugger-to-build-a-rop-chain)
+      * [The Exploit and the ROP chain together:](#the-exploit-and-the-rop-chain-together)
+      * [Useful Links](#useful-links)
+
 
 ## What vulnerability do I use to exploit and run code?
 
