@@ -1,6 +1,24 @@
 # Bypassing Data Execution Prevention on Windows NT
 
-This is the part one of the "Bypassing Windows security mitigations" series. In this article I will cover the protection related to DEP (Data Execution Prevention). When a specified process is hijacked/exploited, if DEP is enabled, the malicious code (shellcode) that resides on stack/heap will not be executed due to DEP marking these as non-executable.
+Table of Contents
+=================
+
+   * [Bypassing Data Execution Prevention on Windows NT](#bypassing-data-execution-prevention-on-windows-nt)
+      * [Introduction &amp; Requirements](#introduction--requirements)
+      * [What vulnerability do I use to exploit and run code?](#what-vulnerability-do-i-use-to-exploit-and-run-code)
+      * [How do I trigger DEP to block the execution of code?](#how-do-i-trigger-dep-to-block-the-execution-of-code)
+      * [How do I execute code if DEP is enabled and blocking my own code (shellcode)?](#how-do-i-execute-code-if-dep-is-enabled-and-blocking-my-own-code-shellcode)
+      * [What is a ROP chain?](#what-is-a-rop-chain)
+      * [How do other protections affect DEP impact on security?](#how-do-other-protections-affect-dep-impact-on-security)
+      * [Do I need to disable other protection(s) for this test?](#do-i-need-to-disable-other-protections-for-this-test)
+      * [Common mistakes made when building ROP chains](#common-mistakes-made-when-building-rop-chains)
+      * [Using the Debugger to build a ROP Chain](#using-the-debugger-to-build-a-rop-chain)
+      * [The Exploit and the ROP chain together:](#the-exploit-and-the-rop-chain-together)
+      * [References](#references)
+
+## Introduction & Requirements
+
+This is the part one of the "Bypassing Windows security mitigations" series. In this article I will cover the protection related to DEP<sup id="a1">[1,](#f1)</sup><sup id="a2">[2](#f2)</sup>. Data Execution Prevention). When a specified process is hijacked/exploited, if DEP is enabled, the malicious code (shellcode) that resides on stack/heap will not be executed due to DEP marking these as non-executable.
 
 This is the list of requirements being these related to software and user base skills.
 
@@ -14,33 +32,15 @@ This is the list of requirements being these related to software and user base s
 
 *Last version is 5.11 from 2015. This IDE is a nice alternative for Visual Studio for dev in C/C++.
 
-Before going into the rough explanation of how to circumvent this protection, I need to explain that if you run Windows x86 you need to enable PAE first then DEP. In x64 it's enabled by default. So you will wonder, what's PAE? 
+Before going into the rough explanation of how to circumvent this protection, I need to explain that if you run Windows x86 you need to enable PAE<sup id="a3">[3](#f3)</sup> first then DEP. In x64 it's enabled by default. So you will wonder, what's PAE? 
 
 PAE stands for Physical Address Execution, is a technique implemented on Windows specially for 32 bit versions that gives the system an improved memory capability that allows the CPU to change the addressing mode to 64 bit, therefore applications can access more than 4GB but will retain their 4GB virtual address space, this will enhance the performance impact on the OS since less paging will be made.
 
 In addition PAE will introduce DEP as a built-in feature. That's why so important to enable PAE if you are running x86 version. No need to worry if you are under x64 version.
 
-So far so good, the following questions will be targeted on these article:
-
-Table of Contents
-=================
-
-   * [Bypassing Data Execution Prevention on Windows NT](#bypassing-data-execution-prevention-on-windows-nt)
-      * [What vulnerability do I use to exploit and run code?](#what-vulnerability-do-i-use-to-exploit-and-run-code)
-      * [How do I trigger DEP to block the execution of code?](#how-do-i-trigger-dep-to-block-the-execution-of-code)
-      * [How do I execute code if DEP is enabled and blocking my own code (shellcode)?](#how-do-i-execute-code-if-dep-is-enabled-and-blocking-my-own-code-shellcode)
-      * [What is a ROP chain?](#what-is-a-rop-chain)
-      * [How do other protections affect DEP impact on security?](#how-do-other-protections-affect-dep-impact-on-security)
-      * [Do I need to disable other protection(s) for this test?](#do-i-need-to-disable-other-protections-for-this-test)
-      * [Common mistakes made when building ROP chains](#common-mistakes-made-when-building-rop-chains)
-      * [Using the Debugger to build a ROP Chain](#using-the-debugger-to-build-a-rop-chain)
-      * [The Exploit and the ROP chain together:](#the-exploit-and-the-rop-chain-together)
-      * [Useful Links](#useful-links)
-
-
 ## What vulnerability do I use to exploit and run code?
 
-In this article I'm using a Buffer Overflow to smash the stack in order to overwrite the return address. When the program returns from a function it will jump to the caller function (the previous one), but if the return addres is overwritten, it will return to what it's there, in exploiting means, this is a pointer to our shellcode. DEP will prevent code to be executed on the stack, then thwarting DEP is essencial to execute our shellcode.
+In this article I'm using a Buffer Overflow<sup id="a4">[4](#f4)</sup> to smash the stack in order to overwrite the return address. When the program returns from a function it will jump to the caller function (the previous one), but if the return addres is overwritten, it will return to what it's there, in exploiting means, this is a pointer to our shellcode. DEP will prevent code to be executed on the stack, then thwarting DEP is essencial to execute our shellcode.
 
 Summarizing: Imagine you've declared a string on the main function of your program and you want to print it through printme() function. printme() will copy our string to a temp buffer then print it. As you see this is a dummy behaviour without bound checking (the whole string is copied into a fixed temp buffer, still can't see the overflow? I show you then!)
 
@@ -75,7 +75,7 @@ PUSH ESP ; will put buf pointer onto stack, param for strcpy
 CALL printme ; push return address onto stack and transfer EIP there
 ```
 
-When the call to printme() is made, it will begin with the function prologe. Just save old EBP, setup a new stack frame and point EBP to this new value:
+When the call to printme() is made, it will begin with the function prologe<sup id="a5">[5](#f5)</sup>. Just save old EBP, setup a new stack frame and point EBP to this new value:
 
 ```nasm
 printme:
@@ -160,7 +160,7 @@ Now you should be struggling with the fact that DEP is blocking any execution at
 
 ## What is a ROP chain?
 
-ROP (Return Oriented Programming) is a technique used for chaining multiple functions (gadgets) from any module of the program to accomplish shellcode execution. It works because the gadgets are located inside any .DLL/module loaded in the Virtual Space Address of the program. These gadgets are marked as executable, so it's perfect to use them to chain multiple instructions to setup registers and finally call VirtualProtect.
+ROP<sup id="a6">[6](#f6)</sup><sup id="a7">[7](#f7)</sup> (Return Oriented Programming) is a technique used for chaining multiple functions (gadgets) from any module of the program to accomplish shellcode execution. It works because the gadgets are located inside any .DLL/module loaded in the Virtual Space Address of the program. These gadgets are marked as executable, so it's perfect to use them to chain multiple instructions to setup registers and finally call VirtualProtect.
 
 ```c
 BOOL WINAPI VirtualProtect(
@@ -186,7 +186,7 @@ Yeah seems cool but... how can I chain these gadgets and trigger the execution o
 
 ## How do other protections affect DEP impact on security?
 
-There exist more protections that work nicely in combination with DEP. The best is ASLR. ASLR randomizes the base address of each module every time the system reboots. Why is ASLR so important? Well these ROP gadgets are addresses that need to be known on every execution. If ASLR changes the base address of any of the modules where gadgets reside, then these gadgets are rebased and printme() will fail since returns to the first gadget which its address is invalid.
+There exist more protections that work nicely in combination with DEP. The best is ASLR<sup id="a1">[8](#f8)</sup>. ASLR randomizes the base address of each module every time the system reboots. Why is ASLR so important? Well these ROP gadgets are addresses that need to be known on every execution. If ASLR changes the base address of any of the modules where gadgets reside, then these gadgets are rebased and printme() will fail since returns to the first gadget which its address is invalid.
 
 This can be seen as:
 
@@ -518,7 +518,9 @@ Junks are used for the POP REG instructions, so the following gadgets are not po
 
 ## The Exploit and the ROP chain together:
 
-At this point you are familiarized with ROP chaining concept, besides you can locate useful gadgets inside loaded modules (DLLs). In addition you know the register's order to perform the VirtualProtect call. It's your work now to complete the rest of the exploit, it is easy but challenging if it's your first time. I'm giving the whole ROP chain and C source, so you can understand and debug it step by step. You will notice how the chain is followed until PUSHAD.
+At this point you are familiarized with ROP chaining concept, besides you can locate useful gadgets inside loaded modules (DLLs). In addition you know the register's order to perform the VirtualProtect call. It's your work now to complete the rest of the exploit, it is easy but challenging if it's your first time. I'm giving the whole ROP chain and C source (shellcode included), so you can understand and debug it step by step. You will notice how the chain is followed until PUSHAD.
+
+The shellcode has been assembled using an online assember<sup id="a9">[9](#f9)</sup>.
 
 ```c
 #include <windows.h>
@@ -672,24 +674,22 @@ int main(int argc, char** argv) {
 
 Use OllyDbg step-by-step and see how the ROP Chain is executed gadget by gadget. Of course you need the same OS I used and ASLR disabled. You can always search for the gadgets I gave above in the executable with OllyDbg, once you find the new addresses substitute on the source code and the exploit should work.
 
-## Useful Links
+## References
 
-https://defuse.ca/online-x86-assembler.html
+<b id="f1">1.</b> [Data Execution Prevention on Windows (msdn)](https://msdn.microsoft.com/en-us/library/windows/desktop/aa366553.aspx) [↩](#a1)
 
-https://en.wikibooks.org/wiki/X86_Disassembly/Calling_Conventions
+<b id="f2">2.</b> [WikiPedia: DEP on Windows](https://en.wikipedia.org/wiki/Executable_space_protection#Windows) [↩](#a2)
 
-https://technet.microsoft.com/en-us/library/cc728455(v=ws.10).aspx
+<b id="f3">3.</b> [PAE X86 Technical Reference](https://technet.microsoft.com/en-us/library/cc728455.aspx) [↩](#a3)
 
-https://msdn.microsoft.com/en-us/library/windows/desktop/aa366553(v=vs.85).aspx
+<b id="f4">4.</b> [Wikipedia: Stack Buffer Overflow](https://en.wikipedia.org/wiki/Stack_buffer_overflow) [↩](#a4)
 
-https://en.wikipedia.org/wiki/Stack_buffer_overflow
+<b id="f5">5.</b> [ASM Calling Conventions](https://en.wikibooks.org/wiki/X86_Disassembly/Calling_Conventions) [↩](#a5)
 
-https://en.wikipedia.org/wiki/Executable_space_protection#Windows
+<b id="f6">6.</b> [Wikipedia: ROP article](https://en.wikipedia.org/wiki/Return-oriented_programming) [↩](#a6)
 
-https://en.wikipedia.org/wiki/Return-oriented_programming
+<b id="f7">7.</b> [Wikpedia: return-to-libc](https://en.wikipedia.org/wiki/Return-to-libc_attack) [↩](#a7)
 
-https://en.wikipedia.org/wiki/Return-to-libc_attack
+<b id="f8">8.</b> [Wikipedia: ASLR article](https://en.wikipedia.org/wiki/Address_space_layout_randomization) [↩](#a8)
 
-https://en.wikipedia.org/wiki/Address_space_layout_randomization
-
-https://www.corelan.be/index.php/2010/06/16/exploit-writing-tutorial-part-10-chaining-dep-with-rop-the-rubikstm-cube/
+<b id="f9">9.</b> [defuse.ca online assembler](https://defuse.ca/online-x86-assembler.html) [↩](#a9)
